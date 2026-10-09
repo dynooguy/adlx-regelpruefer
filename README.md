@@ -91,6 +91,17 @@ Globaler Block `ausnahmen`:
 Ein ungültiges `muster` überspringt nur diese Regel, mit einer Zeile auf stderr.
 Regeln mit unbekanntem `bereich` werden ebenfalls übersprungen.
 
+## Dialekt der Muster
+
+Die Muster sollen in Python-`re` und in JavaScript dasselbe bedeuten. Verwende
+deshalb nur die gemeinsame Teilmenge: Zeichenklassen, Gruppen, Alternativen,
+Quantoren, Lookahead/Lookbehind. `\w`, `\W`, `\b` und `\B` werden vor dem
+Kompilieren so umgeschrieben, dass sie wie in Python Unicode kennen (Umlaute, ß
+zählen als Wortzeichen). In Zeichenklassen wird nur `\w` ersetzt. Das Muster wird
+mit dem Unicode-Flag kompiliert; dort ungültige Escapes (etwa `\"`) machen die
+Regel ungültig. Inline-Flags wie `(?i)` gibt es nicht, Groß-/Kleinschreibung
+steuert `gross_klein`.
+
 ## Ausgabe
 
 Textformat: `datei:zeile: schweregrad id: "fund" - hinweis`. JSON: Liste von

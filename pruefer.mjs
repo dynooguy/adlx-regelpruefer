@@ -20,6 +20,43 @@ const ENTITIES = {
 
 // ---------------------------------------------------------------- Regeln
 
+const WORT = "[\\p{L}\\p{N}_]";
+const NICHT_WORT = "[^\\p{L}\\p{N}_]";
+
+/**
+ * Schreibt \w, \W, \b, \B so um, dass sie wie in Python-re (Unicode) wirken.
+ * In Zeichenklassen wird nur \w ersetzt; Escapes und \\ bleiben unberührt.
+ */
+export function unicodeMuster(muster) {
+  let aus = "";
+  let inKlasse = false;
+  for (let i = 0; i < muster.length; i++) {
+    const c = muster[i];
+    if (c === "\\") {
+      const n = muster[i + 1];
+      i++;
+      if (n === undefined) {
+        aus += c;
+      } else if (n === "w") {
+        aus += inKlasse ? "\\p{L}\\p{N}_" : WORT;
+      } else if (n === "W" && !inKlasse) {
+        aus += NICHT_WORT;
+      } else if (n === "b" && !inKlasse) {
+        aus += `(?:(?<=${WORT})(?!${WORT})|(?<!${WORT})(?=${WORT}))`;
+      } else if (n === "B" && !inKlasse) {
+        aus += `(?:(?<=${WORT})(?=${WORT})|(?<!${WORT})(?!${WORT}))`;
+      } else {
+        aus += c + n;
+      }
+      continue;
+    }
+    if (c === "[" && !inKlasse) inKlasse = true;
+    else if (c === "]" && inKlasse) inKlasse = false;
+    aus += c;
+  }
+  return aus;
+}
+
 /** Liest die Regeldatei. Wirft bei fehlender/kaputter Datei einen Error mit lesbarer Meldung. */
 export function ladeRegeln(pfad) {
   let roh;
@@ -61,7 +98,7 @@ export function normalisiereRegeln(daten, warne = (t) => process.stderr.write(t 
     }
     let rx;
     try {
-      rx = new RegExp(r.muster, r.gross_klein ? "gu" : "giu");
+      rx = new RegExp(unicodeMuster(r.muster), r.gross_klein ? "gu" : "giu");
     } catch (e) {
       warne(`Regel ${r.id} übersprungen: ungültiges Muster (${e.message})`);
       continue;
@@ -159,9 +196,35 @@ export function leseDeklarationen(css, { zeilenOffset = 1, standardSelektor = ""
     pufferZeile = null;
   };
 
+  let anfuehrung = null; // aktuelles Anführungszeichen
+  let klammer = 0; // Tiefe in url(...)
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (c === "\n") zeile++;
+    if (anfuehrung) {
+      if (c === "\\") {
+        puffer += c + (s[i + 1] ?? "");
+        if (s[i + 1] === "\n") zeile++;
+        i++;
+        continue;
+      }
+      if (c === anfuehrung) anfuehrung = null;
+      puffer += c;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      anfuehrung = c;
+      if (pufferZeile === null) pufferZeile = zeile;
+      puffer += c;
+      continue;
+    }
+    if (c === "(") klammer++;
+    else if (c === ")" && klammer > 0) klammer--;
+    if (klammer > 0) {
+      if (pufferZeile === null && !/\s/.test(c)) pufferZeile = zeile;
+      puffer += c;
+      continue;
+    }
     if (c === "{") {
       stapel.push(puffer.replace(/\s+/g, " ").trim());
       puffer = "";

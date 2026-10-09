@@ -149,3 +149,45 @@ test("Ungültiges Muster überspringt nur diese Regel", () => {
     rmSync(d, { recursive: true });
   }
 });
+
+test("Unicode-Wortgrenzen wie in Python", () => {
+  const d = arbeitsordner();
+  try {
+    const regeln = structuredClone(REGELN);
+    regeln.regeln = [
+      { id: "a", bereich: "text", muster: "\\bÄrger\\b", gross_klein: true, schweregrad: "warnung" },
+      { id: "b", bereich: "text", muster: "\\bgroß\\b", gross_klein: true, schweregrad: "warnung" },
+      { id: "c", bereich: "text", muster: "\\bpacht\\w*", gross_klein: false, schweregrad: "warnung" },
+    ];
+    writeFileSync(join(d, "regeln.json"), JSON.stringify(regeln));
+    const r = json(d, "u.md", "Ärger und Ärgernis\ngroß und großartig\nein Pachtvertrag\n");
+    assert.deepEqual(r.funde.map((f) => [f.id, f.fund, f.zeile]), [["a", "Ärger", 1], ["b", "groß", 2], ["c", "Pachtvertrag", 3]]);
+  } finally {
+    rmSync(d, { recursive: true });
+  }
+});
+
+test("Absoluter Glob und Hinweis ohne Treffer", () => {
+  const d = arbeitsordner();
+  try {
+    writeFileSync(join(d, "x.md"), "verboten\n");
+    const r = lauf(d, ["--regeln", "regeln.json", `${d}/*.md`]);
+    assert.match(r.out, /x\.md:1: fehler text-wort/);
+    const n = lauf(d, ["--regeln", "regeln.json", "nix/*.md"]);
+    assert.match(n.err, /keine Datei gefunden/);
+  } finally {
+    rmSync(d, { recursive: true });
+  }
+});
+
+test("CSS: Semikolon und Klammer in Strings und url() sind keine Trenner", () => {
+  const d = arbeitsordner();
+  try {
+    const css = '.a{background:url(data:image/svg+xml;utf8,<svg>{x}</svg>);text-transform:uppercase}.b{content:"a;b}";color:red}';
+    const r = json(d, "d.css", css);
+    assert.equal(r.funde.length, 1);
+    assert.equal(r.funde[0].selektor, ".a");
+  } finally {
+    rmSync(d, { recursive: true });
+  }
+});

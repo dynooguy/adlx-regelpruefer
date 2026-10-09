@@ -70,14 +70,24 @@ export function loesePfadeAuf(eingaben, cwd = process.cwd()) {
       const i = teile.findIndex((t) => /[*?]/.test(t));
       const basis = teile.slice(0, i).join("/") || ".";
       const abs = resolve(cwd, basis);
-      if (!existsSync(abs)) continue;
+      if (!existsSync(abs)) {
+        process.stderr.write(`Hinweis: keine Datei gefunden für ${e}\n`);
+        continue;
+      }
       const alle = [];
       gehe(abs, alle);
-      const rx = globZuRegex(e.replace(/^\.\//, ""));
+      const absolut = e.startsWith("/");
+      const rx = globZuRegex(absolut ? e : e.replace(/^\.\//, ""));
+      let treffer = 0;
       for (const f of alle) {
         const rel = relative(cwd, f).split("\\").join("/");
-        if (rx.test(rel) && hatEndung(f)) dateien.add(rel);
+        const vergleich = absolut ? f.split("\\").join("/") : rel;
+        if (rx.test(vergleich) && hatEndung(f)) {
+          dateien.add(rel);
+          treffer++;
+        }
       }
+      if (!treffer) process.stderr.write(`Hinweis: keine Datei gefunden für ${e}\n`);
     } else {
       const abs = resolve(cwd, e);
       if (!existsSync(abs)) {
@@ -87,7 +97,14 @@ export function loesePfadeAuf(eingaben, cwd = process.cwd()) {
       if (statSync(abs).isDirectory()) {
         const alle = [];
         gehe(abs, alle);
-        for (const f of alle) if (hatEndung(f)) dateien.add(relative(cwd, f).split("\\").join("/"));
+        let treffer = 0;
+        for (const f of alle) {
+          if (hatEndung(f)) {
+            dateien.add(relative(cwd, f).split("\\").join("/"));
+            treffer++;
+          }
+        }
+        if (!treffer) process.stderr.write(`Hinweis: keine prüfbare Datei in ${e}\n`);
       } else dateien.add(relative(cwd, abs).split("\\").join("/"));
     }
   }
