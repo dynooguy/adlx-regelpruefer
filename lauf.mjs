@@ -62,8 +62,12 @@ function hatEndung(pfad) {
 }
 
 /** Löst Dateien, Verzeichnisse und Globs zu einer sortierten Dateiliste auf. */
-export function loesePfadeAuf(eingaben, cwd = process.cwd()) {
+export function loesePfadeAuf(eingaben, cwd = process.cwd(), zaehler = { pfadfehler: 0 }) {
   const dateien = new Set();
+  const meldeFehler = (text) => {
+    zaehler.pfadfehler++;
+    process.stderr.write(`Fehler: ${text}\n`);
+  };
   for (const e of eingaben) {
     if (/[*?]/.test(e)) {
       const teile = e.split("/");
@@ -71,7 +75,7 @@ export function loesePfadeAuf(eingaben, cwd = process.cwd()) {
       const basis = teile.slice(0, i).join("/") || ".";
       const abs = resolve(cwd, basis);
       if (!existsSync(abs)) {
-        process.stderr.write(`Hinweis: keine Datei gefunden für ${e}\n`);
+        meldeFehler(`keine Datei gefunden für ${e}`);
         continue;
       }
       const alle = [];
@@ -87,11 +91,11 @@ export function loesePfadeAuf(eingaben, cwd = process.cwd()) {
           treffer++;
         }
       }
-      if (!treffer) process.stderr.write(`Hinweis: keine Datei gefunden für ${e}\n`);
+      if (!treffer) meldeFehler(`keine Datei gefunden für ${e}`);
     } else {
       const abs = resolve(cwd, e);
       if (!existsSync(abs)) {
-        process.stderr.write(`Pfad nicht gefunden: ${e}\n`);
+        meldeFehler(`Pfad nicht gefunden: ${e}`);
         continue;
       }
       if (statSync(abs).isDirectory()) {
@@ -104,7 +108,7 @@ export function loesePfadeAuf(eingaben, cwd = process.cwd()) {
             treffer++;
           }
         }
-        if (!treffer) process.stderr.write(`Hinweis: keine prüfbare Datei in ${e}\n`);
+        if (!treffer) meldeFehler(`keine prüfbare Datei in ${e}`);
       } else dateien.add(relative(cwd, abs).split("\\").join("/"));
     }
   }
@@ -138,7 +142,8 @@ export function lauf(argv, { cwd = process.cwd(), ausgabe = (t) => process.stdou
     return 0;
   }
   const funde = [];
-  for (const datei of loesePfadeAuf(a.pfade, cwd)) {
+  const zaehler = { pfadfehler: 0 };
+  for (const datei of loesePfadeAuf(a.pfade, cwd, zaehler)) {
     let inhalt;
     try {
       inhalt = readFileSync(resolve(cwd, datei), "utf8");
@@ -154,5 +159,6 @@ export function lauf(argv, { cwd = process.cwd(), ausgabe = (t) => process.stdou
   if (a.format === "text") {
     process.stderr.write(`${funde.length} Funde, davon ${fehler} Fehler\n`);
   }
+  if (zaehler.pfadfehler) return 2;
   return fehler > 0 && !a.nurWarnen ? 1 : 0;
 }

@@ -174,7 +174,8 @@ test("Absoluter Glob und Hinweis ohne Treffer", () => {
     const r = lauf(d, ["--regeln", "regeln.json", `${d}/*.md`]);
     assert.match(r.out, /x\.md:1: fehler text-wort/);
     const n = lauf(d, ["--regeln", "regeln.json", "nix/*.md"]);
-    assert.match(n.err, /keine Datei gefunden/);
+    assert.match(n.err, /keine Datei gefunden für nix\/\*\.md/);
+    assert.equal(n.code, 2);
   } finally {
     rmSync(d, { recursive: true });
   }
@@ -187,6 +188,113 @@ test("CSS: Semikolon und Klammer in Strings und url() sind keine Trenner", () =>
     const r = json(d, "d.css", css);
     assert.equal(r.funde.length, 1);
     assert.equal(r.funde[0].selektor, ".a");
+  } finally {
+    rmSync(d, { recursive: true });
+  }
+});
+
+test("Pfadfehler: Exit 2 mit Pfad auf stderr, auch mit --nur-warnen", () => {
+  const d = arbeitsordner();
+  try {
+    mkdirSync(join(d, "leer"));
+    writeFileSync(join(d, "leer", "bild.png"), "x");
+    for (const pfad of ["gibt-es-nicht.md", "nix/*.md", "leer"]) {
+      for (const extra of [[], ["--nur-warnen"]]) {
+        const r = lauf(d, ["--regeln", "regeln.json", ...extra, pfad]);
+        assert.equal(r.code, 2, `${pfad} ${extra}`);
+        assert.ok(r.err.includes(pfad), r.err);
+      }
+    }
+  } finally {
+    rmSync(d, { recursive: true });
+  }
+});
+
+test("Pfadfehler: vorhandene Dateien werden trotzdem geprüft, Exit bleibt 2", () => {
+  const d = arbeitsordner();
+  try {
+    writeFileSync(join(d, "x.md"), "verboten\n");
+    const r = lauf(d, ["--regeln", "regeln.json", "x.md", "fehlt.md"]);
+    assert.equal(r.code, 2);
+    assert.match(r.out, /x\.md:1: fehler text-wort/);
+    assert.match(r.err, /fehlt\.md/);
+    const w = lauf(d, ["--regeln", "regeln.json", "--nur-warnen", "x.md", "fehlt.md"]);
+    assert.equal(w.code, 2);
+    assert.match(w.out, /x\.md:1: fehler text-wort/);
+  } finally {
+    rmSync(d, { recursive: true });
+  }
+});
+
+test("\\W, \\d, \\s in Zeichenklassen: Unicode wie Python (umgeschrieben)", () => {
+  const d = arbeitsordner();
+  try {
+    const regeln = structuredClone(REGELN);
+    const mk = (id, muster) => ({ id, bereich: "text", muster, gross_klein: true, schweregrad: "warnung" });
+    regeln.regeln = [
+      mk("w", "x[\\W]y"),     // Nicht-Wortzeichen zwischen x und y
+      mk("d", "n[\\d]n"),     // Ziffer, auch nicht-ASCII (arabisch-indisch)
+      mk("s", "a[\\s]b"),     // Leerraum, auch NBSP
+      mk("nd", "m[^\\d\\s]m"), // weder Ziffer noch Leerraum
+      mk("sw", "q[\\S]q"),    // Nicht-Leerraum
+    ];
+    writeFileSync(join(d, "regeln.json"), JSON.stringify(regeln));
+    const text = [
+      "x-y xäy",          // w: nur "x-y" (ä ist Wortzeichen)
+      "n5n n\u0665n nXn",   // d: 5 und arabische 5, nicht X
+      "a b a\u00a0b aXb",  // s: Leerzeichen und NBSP
+      "m1m m m mxm",      // nd: nur mxm
+      "q q qxq",          // sw: nur qxq
+    ].join("\n") + "\n";
+    const r = json(d, "k.md", text);
+    assert.deepEqual(
+      r.funde.map((f) => [f.id, f.zeile, f.fund]),
+      [["w", 1, "x-y"], ["d", 2, "n5n"], ["d", 2, "n\u0665n"], ["s", 3, "a b"], ["s", 3, "a\u00a0b"], ["nd", 4, "mxm"], ["sw", 5, "qxq"]]
+    );
+  } finally {
+    rmSync(d, { recursive: true });
+  }
+});
+
+test("CSS: Escapes außerhalb von Strings verschieben weder Selektor noch Deklaration", () => {
+  const d = arbeitsordner();
+  try {
+    let r = json(d, "e1.css", ".a\\{b{text-transform:uppercase}");
+    assert.equal(r.funde.length, 1);
+    assert.equal(r.funde[0].selektor, ".a\\{b");
+    r = json(d, "e2.css", ".x\\;y{text-transform:uppercase}");
+    assert.equal(r.funde.length, 1);
+    assert.equal(r.funde[0].selektor, ".x\\;y");
+    r = json(d, "e3.css", ".x\\;y{color:red}.z{text-transform:uppercase}");
+    assert.deepEqual(r.funde.map((f) => f.selektor), [".z"]);
+  } finally {
+    rmSync(d, { recursive: true });
+  }
+});
+
+test("Negierte Klasse mit \\W/\\D/\\S und nicht geschlossene Klasse", () => {
+  const d = arbeitsordner();
+  try {
+    const regeln = structuredClone(REGELN);
+    const mk = (id, muster) => ({ id, bereich: "text", muster, gross_klein: true, schweregrad: "warnung" });
+    regeln.regeln = [mk("buchstabe", "k[^\\W\\d]k"), mk("offen", "k[abc")];
+    writeFileSync(join(d, "regeln.json"), JSON.stringify(regeln));
+    const r = lauf(d, ["--regeln", "regeln.json", "--format", "json", (writeFileSync(join(d, "n.md"), "kak käk k5k k-k\n"), "n.md")]);
+    assert.deepEqual(JSON.parse(r.out).map((f) => f.fund), ["kak", "käk"]);
+    assert.match(r.err, /Regel offen übersprungen: ungültiges Muster/);
+  } finally {
+    rmSync(d, { recursive: true });
+  }
+});
+
+test("Glob mit vorhandener Basis ohne Treffer: Exit 2", () => {
+  const d = arbeitsordner();
+  try {
+    mkdirSync(join(d, "sub"));
+    writeFileSync(join(d, "sub", "a.md"), "verboten\n");
+    const r = lauf(d, ["--regeln", "regeln.json", "sub/*.html"]);
+    assert.equal(r.code, 2);
+    assert.match(r.err, /keine Datei gefunden für sub\/\*\.html/);
   } finally {
     rmSync(d, { recursive: true });
   }

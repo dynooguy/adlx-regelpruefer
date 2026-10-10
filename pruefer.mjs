@@ -22,37 +22,75 @@ const ENTITIES = {
 
 const WORT = "[\\p{L}\\p{N}_]";
 const NICHT_WORT = "[^\\p{L}\\p{N}_]";
+// Python-re (str): \d = Unicode-Dezimalziffern, \s = Unicode-Leerraum.
+const ZIFFER = "\\p{Nd}";
+const LEER = "\\t-\\r\\x1c-\\x20\\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
+
+// Inhalt einer Zeichenklasse (Text ab dem Zeichen nach "[") umschreiben.
+// Gibt { aus, ende } zurück; ende ist der Index des schließenden "]".
+function klasseUmschreiben(muster, start) {
+  let i = start;
+  let negiert = false;
+  if (muster[i] === "^") {
+    negiert = true;
+    i++;
+  }
+  let positiv = "";
+  const gegenteil = []; // \W, \D, \S: lassen sich nicht in einer Klasse vereinigen
+  for (; i < muster.length && muster[i] !== "]"; i++) {
+    const c = muster[i];
+    if (c !== "\\") {
+      positiv += c;
+      continue;
+    }
+    const n = muster[++i];
+    if (n === undefined) positiv += c;
+    else if (n === "w") positiv += "\\p{L}\\p{N}_";
+    else if (n === "d") positiv += ZIFFER;
+    else if (n === "s") positiv += LEER;
+    else if (n === "W") gegenteil.push(NICHT_WORT);
+    else if (n === "D") gegenteil.push("\\P{Nd}");
+    else if (n === "S") gegenteil.push(`[^${LEER}]`);
+    else positiv += c + n;
+  }
+  if (i >= muster.length) throw new SyntaxError("nicht geschlossene Zeichenklasse");
+  const ende = i;
+  if (!gegenteil.length) return { aus: `[${negiert ? "^" : ""}${positiv}]`, ende };
+  const teile = (positiv ? [`[${positiv}]`] : []).concat(gegenteil);
+  // Klasse mit \W/\D/\S als Alternation; negiert als "keines davon".
+  const aus = negiert ? `(?:${teile.map((t) => `(?!${t})`).join("")}[\\s\\S])` : `(?:${teile.join("|")})`;
+  return { aus, ende };
+}
 
 /**
- * Schreibt \w, \W, \b, \B so um, dass sie wie in Python-re (Unicode) wirken.
- * In Zeichenklassen wird nur \w ersetzt; Escapes und \\ bleiben unberührt.
+ * Schreibt \w, \W, \d, \D, \s, \S, \b, \B so um, dass sie wie in Python-re
+ * (Unicode) wirken, auch innerhalb von Zeichenklassen (dort ggf. als Alternation).
  */
 export function unicodeMuster(muster) {
   let aus = "";
-  let inKlasse = false;
   for (let i = 0; i < muster.length; i++) {
     const c = muster[i];
-    if (c === "\\") {
-      const n = muster[i + 1];
-      i++;
-      if (n === undefined) {
-        aus += c;
-      } else if (n === "w") {
-        aus += inKlasse ? "\\p{L}\\p{N}_" : WORT;
-      } else if (n === "W" && !inKlasse) {
-        aus += NICHT_WORT;
-      } else if (n === "b" && !inKlasse) {
-        aus += `(?:(?<=${WORT})(?!${WORT})|(?<!${WORT})(?=${WORT}))`;
-      } else if (n === "B" && !inKlasse) {
-        aus += `(?:(?<=${WORT})(?=${WORT})|(?<!${WORT})(?!${WORT}))`;
-      } else {
-        aus += c + n;
-      }
+    if (c === "[") {
+      const k = klasseUmschreiben(muster, i + 1);
+      aus += k.aus;
+      i = k.ende;
       continue;
     }
-    if (c === "[" && !inKlasse) inKlasse = true;
-    else if (c === "]" && inKlasse) inKlasse = false;
-    aus += c;
+    if (c !== "\\") {
+      aus += c;
+      continue;
+    }
+    const n = muster[++i];
+    if (n === undefined) aus += c;
+    else if (n === "w") aus += WORT;
+    else if (n === "W") aus += NICHT_WORT;
+    else if (n === "d") aus += ZIFFER;
+    else if (n === "D") aus += "\\P{Nd}";
+    else if (n === "s") aus += `[${LEER}]`;
+    else if (n === "S") aus += `[^${LEER}]`;
+    else if (n === "b") aus += `(?:(?<=${WORT})(?!${WORT})|(?<!${WORT})(?=${WORT}))`;
+    else if (n === "B") aus += `(?:(?<=${WORT})(?=${WORT})|(?<!${WORT})(?!${WORT}))`;
+    else aus += c + n;
   }
   return aus;
 }
@@ -210,6 +248,14 @@ export function leseDeklarationen(css, { zeilenOffset = 1, standardSelektor = ""
       }
       if (c === anfuehrung) anfuehrung = null;
       puffer += c;
+      continue;
+    }
+    if (c === "\\") {
+      // Escape außerhalb von Strings (\{, \;, \: in Selektoren): nächstes Zeichen ist kein Trenner
+      if (pufferZeile === null) pufferZeile = zeile;
+      puffer += c + (s[i + 1] ?? "");
+      if (s[i + 1] === "\n") zeile++;
+      i++;
       continue;
     }
     if (c === '"' || c === "'") {

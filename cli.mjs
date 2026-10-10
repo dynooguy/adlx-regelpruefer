@@ -14,9 +14,14 @@
 // oder Globs mit * ** ?. Fund: Datei, Zeile (bei minifiziertem CSS Selektor statt
 // Zeile), Regel-id, Fundtext, Schweregrad, Hinweis.
 //
-// Exit-Code: 1 nur bei mindestens einem Fund mit Schweregrad "fehler" (nie mit
-// --nur-warnen), sonst 0. Fehlende oder kaputte Regeldatei: Hinweis auf stderr,
-// Exit 0. Falscher Aufruf (Option fehlt/unbekannt): Exit 2.
+// Exit-Codes:
+//   0  kein Fund mit Schweregrad "fehler" (oder --nur-warnen). Fehlende oder
+//      kaputte Regeldatei: Hinweis auf stderr, ebenfalls 0.
+//   1  mindestens ein Fund mit Schweregrad "fehler" (nie mit --nur-warnen).
+//   2  falscher Aufruf (Option fehlt/unbekannt) oder Pfadfehler: nicht vorhandener
+//      Pfad, Glob ohne Treffer, Verzeichnis ohne prüfbare Datei. Die Zeile mit dem
+//      Pfad steht auf stderr; vorhandene Dateien werden trotzdem geprüft und
+//      ausgegeben. Gilt auch mit --nur-warnen.
 
 import { lauf } from "./lauf.mjs";
 

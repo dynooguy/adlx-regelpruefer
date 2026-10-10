@@ -1,6 +1,6 @@
 {
   "name": "regelpruefer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Prüft gebaute Ausgabe (HTML, CSS, Markdown, Text) gegen eine Regeldatei im JSON-Austauschformat Version 1.",
   "type": "module",
   "main": "pruefer.mjs",

@@ -23,9 +23,20 @@ Pfade sind Dateien, Verzeichnisse (rekursiv; geprüft werden `html`, `htm`,
 `css`, `md`, `markdown`, `txt`) oder Globs mit `*`, `**` und `?`. `node_modules`
 und `.git` werden übersprungen.
 
-Exit-Code 1 gibt es nur bei mindestens einem Fund mit Schweregrad `fehler`
-(nie mit `--nur-warnen`), sonst 0. Fehlt die Regeldatei oder ist sie kaputt,
-steht ein Hinweis auf stderr und der Exit-Code ist 0. Falscher Aufruf ergibt 2.
+Exit-Codes:
+
+| Code | Bedeutung |
+|---|---|
+| 0 | kein Fund mit Schweregrad `fehler` (oder `--nur-warnen`) |
+| 1 | mindestens ein Fund mit Schweregrad `fehler` (nie mit `--nur-warnen`) |
+| 2 | falscher Aufruf oder Pfadfehler (siehe unten), auch mit `--nur-warnen` |
+
+Pfadfehler sind ein nicht vorhandener Pfad, ein Glob ohne Treffer und ein
+Verzeichnis ohne prüfbare Datei. Der Prüfer schreibt je Fall eine Zeile mit dem
+Pfad auf stderr (`Fehler: ...`) und beendet den Lauf mit 2. Vorhandene Dateien
+neben dem fehlenden Pfad werden trotzdem geprüft und ausgegeben. Fehlt die
+Regeldatei oder ist sie kaputt, steht ein Hinweis auf stderr und der Exit-Code
+ist 0 (es wurde nichts geprüft).
 
 ## Was geprüft wird
 
@@ -95,9 +106,11 @@ Regeln mit unbekanntem `bereich` werden ebenfalls übersprungen.
 
 Die Muster sollen in Python-`re` und in JavaScript dasselbe bedeuten. Verwende
 deshalb nur die gemeinsame Teilmenge: Zeichenklassen, Gruppen, Alternativen,
-Quantoren, Lookahead/Lookbehind. `\w`, `\W`, `\b` und `\B` werden vor dem
-Kompilieren so umgeschrieben, dass sie wie in Python Unicode kennen (Umlaute, ß
-zählen als Wortzeichen). In Zeichenklassen wird nur `\w` ersetzt. Das Muster wird
+Quantoren, Lookahead/Lookbehind. `\w`, `\W`, `\d`, `\D`, `\s`, `\S`, `\b` und
+`\B` werden vor dem Kompilieren so umgeschrieben, dass sie wie in Python Unicode
+kennen (Umlaute, ß zählen als Wortzeichen, `\d` sind alle Dezimalziffern,
+`\s` der Unicode-Leerraum). Das gilt auch in Zeichenklassen; dort werden `\W`,
+`\D` und `\S` als Alternation neben der übrigen Klasse umgeschrieben. Das Muster wird
 mit dem Unicode-Flag kompiliert; dort ungültige Escapes (etwa `\"`) machen die
 Regel ungültig. Inline-Flags wie `(?i)` gibt es nicht, Groß-/Kleinschreibung
 steuert `gross_klein`.
@@ -112,6 +125,30 @@ Objekten mit `datei`, `zeile`, `selektor`, `id`, `fund`, `schweregrad`,
 
 ```
 node --test
+```
+
+## Veröffentlichen
+
+Der Prüfer liegt im Arbeitsrepo unter `regelpruefer/` und wird nach
+`dynooguy/adlx-regelpruefer` gespiegelt. Verbraucher beziehen ein per
+`npm pack` erzeugtes Tarball als GitHub-Release-Asset (feste Bytes, stabiler
+Integrity-Hash im `package-lock.json`), nicht das von GitHub erzeugte Archiv.
+Ablauf für Version 0.1.1 aus dem Wurzelverzeichnis des Arbeitsrepos, nach dem Merge:
+
+```
+git subtree split --prefix=regelpruefer -b regelpruefer-split
+git push git@github.com:dynooguy/adlx-regelpruefer.git regelpruefer-split:main
+git tag v0.1.1 regelpruefer-split
+git push git@github.com:dynooguy/adlx-regelpruefer.git v0.1.1
+cd regelpruefer && npm pack          # erzeugt regelpruefer-0.1.1.tgz
+gh release create v0.1.1 regelpruefer-0.1.1.tgz --repo dynooguy/adlx-regelpruefer --title v0.1.1
+git branch -D regelpruefer-split && rm regelpruefer-0.1.1.tgz
+```
+
+Bezugs-URL in der `package.json` des Verbrauchers:
+
+```
+"regelpruefer": "https://github.com/dynooguy/adlx-regelpruefer/releases/download/v0.1.1/regelpruefer-0.1.1.tgz"
 ```
 
 ## Als Bibliothek
